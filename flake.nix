@@ -12,40 +12,39 @@
     };
   };
 
-  outputs =
-    { self
-    , nixpkgs
-    , flake-utils
-    , brew-api
-    , nix-darwin
-    , ...
-    }:
-    let
-      # less than 2.19 does not do it, but let's not go overboard with latest version
-      nixRequiredVersion = rec {
-        versionSatisfiesRequirement = pkgs: nix: (builtins.compareVersions nix.version pkgs.nixVersions.nix_2_19.version) >= 0;
-        package = pkgs:
-          if versionSatisfiesRequirement pkgs pkgs.nix
-          then pkgs.nix
-          else pkgs.nixVersions.nix_2_19;
-        message = "Nix version 2.19 is required at least.";
-      };
-    in
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    brew-api,
+    nix-darwin,
+    ...
+  }: let
+    # less than 2.19 does not do it, but let's not go overboard with latest version
+    nixRequiredVersion = rec {
+      versionSatisfiesRequirement = pkgs: nix: (builtins.compareVersions nix.version pkgs.nixVersions.nix_2_24.version) >= 0;
+      package = pkgs:
+        if versionSatisfiesRequirement pkgs pkgs.nix
+        then pkgs.nix
+        else pkgs.nixVersions.nix_2_24;
+      message = "Nix version 2.19 is required at least.";
+    };
+  in
     rec {
       overlays.default = final: prev: {
         brewCasks = self.packages.${final.system};
       };
-      darwinModules.default = (import ./module.nix) { brewCasks = overlays.default; inherit nixRequiredVersion; };
+      darwinModules.default = (import ./module.nix) {
+        brewCasks = overlays.default;
+        inherit nixRequiredVersion;
+      };
     }
-    //
-    (flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+    // (flake-utils.lib.eachDefaultSystem (
+      system: let
         pkgs = import nixpkgs {
           inherit system;
         };
-      in
-      {
+      in {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             (nixRequiredVersion.package pkgs)
@@ -53,7 +52,12 @@
           ];
         };
 
-        packages = import ./casks.nix { inherit brew-api; inherit pkgs; lib = pkgs.lib; stdenv = pkgs.stdenv; };
+        packages = import ./casks.nix {
+          inherit brew-api;
+          inherit pkgs;
+          lib = pkgs.lib;
+          stdenv = pkgs.stdenv;
+        };
 
         # XXX: the check only runs successful on Darwin systems, but is provided for "eachDefaultSystem",
         #      including Linux; probably best to limit systems in general, since `casks.nix` is obviously
@@ -63,7 +67,7 @@
           # XXX: There seems to be some incompatibility of lock-files between Nix versions.
           #      This error occurs when a different Nix version is used to build the system than was used
           #      to lock the flake in `examples/`: https://github.com/NixOS/nix/issues/10815
-          darwin-rebuild-path = (nix-darwin.packages.${system}.darwin-rebuild.overrideAttrs (prev: { path = (nixRequiredVersion.package pkgs) + "/bin:" + prev.path; }));
+          darwin-rebuild-path = nix-darwin.packages.${system}.darwin-rebuild.overrideAttrs (prev: {path = (nixRequiredVersion.package pkgs) + "/bin:" + prev.path;});
         in
           pkgs.runCommandLocal "build-examples" {} ''
             export HOME=$(mktemp -d)
